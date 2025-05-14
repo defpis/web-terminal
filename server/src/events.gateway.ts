@@ -9,13 +9,17 @@ import { Server, Socket } from 'socket.io';
 import * as pty from 'node-pty';
 
 function spawn(socket: Socket) {
-  const term = pty.spawn('zsh', [], {
-    name: 'xterm-color',
-    cols: 80,
-    rows: 30,
-    env: process.env,
-    cwd: process.env.HOME,
-  });
+  const term = pty.spawn(
+    '/usr/bin/env',
+    ['ssh', 'test@localhost', '-p', '2222'],
+    {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 30,
+      env: process.env,
+      cwd: process.env.HOME,
+    },
+  );
 
   term.onExit(() => {
     socket.removeAllListeners();
