@@ -6,38 +6,76 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import * as pty from 'node-pty';
+import { Client } from 'ssh2';
 
-function spawn(socket: Socket) {
-  const term = pty.spawn(
-    '/usr/bin/env',
-    ['ssh', 'test@localhost', '-p', '2222'],
-    {
-      name: 'xterm-color',
-      cols: 80,
-      rows: 30,
-      env: process.env,
-      cwd: process.env.HOME,
-    },
-  );
+function spawn(socket: Socket, conn: Client) {
+  conn
+    .on('ready', () => {
+      conn.sftp((err, sftp) => {
+        if (err) {
+          socket.emit('output', `sftp error: ${err.message}\r\n`);
+          return;
+        }
 
-  term.onExit(() => {
-    socket.removeAllListeners();
-  });
-  term.onData((data: string) => {
-    socket.emit('output', data);
-  });
+        socket.on('sftp-list', (path: string) => {
+          sftp.readdir(path, (err, list) => {
+            if (err) {
+              socket.emit('output', `sftp-list: ${err.message}\r\n`);
+              return;
+            }
+            socket.emit('sftp', list.map((item) => item.filename).join('\r\n'));
+          });
+        });
 
-  socket.on('resize', (size: { cols: number; rows: number }) => {
-    term.resize(size.cols, size.rows);
-  });
-  socket.on('input', (data: string) => {
-    term.write(data);
-  });
+        socket.on('sftp-read', (remotePath: string) => {
+          let data = '';
+          const stream = sftp.createReadStream(remotePath);
 
-  socket.on('disconnect', () => {
-    console.log(`客户端 ${socket.id} 断开连接`);
-    term.kill();
+          stream.on('data', (chunk: Buffer) => {
+            data += chunk.toString();
+          });
+
+          stream.on('end', () => {
+            socket.emit('sftp', data);
+          });
+
+          stream.on('error', (err) => {
+            socket.emit('output', `sftp-read: ${err.message}\r\n`);
+          });
+        });
+      });
+
+      conn.shell({ term: 'xterm-color' }, (err, stream) => {
+        if (err) {
+          socket.emit('output', `shell error: ${err.message}\r\n`);
+          return;
+        }
+
+        stream.on('data', (data: Buffer) => {
+          socket.emit('output', data.toString());
+        });
+        stream.on('finish', () => {});
+
+        // --------------------
+
+        socket.on('input', (data: string) => {
+          stream.write(data);
+        });
+
+        socket.on('disconnect', () => {
+          conn.end();
+        });
+      });
+    })
+    .on('error', (err) => {
+      socket.emit('output', `ssh error: ${err.message}\r\n`);
+    });
+
+  conn.connect({
+    host: 'localhost',
+    port: 2222,
+    username: 'test',
+    password: 'test',
   });
 }
 
@@ -47,6 +85,12 @@ function spawn(socket: Socket) {
 export class EventsGateway {
   @WebSocketServer()
   server: Server;
+
+  private conn: Client;
+
+  constructor() {
+    this.conn = new Client();
+  }
 
   @SubscribeMessage('message')
   handleMessage(
@@ -60,6 +104,6 @@ export class EventsGateway {
 
   handleConnection(@ConnectedSocket() socket: Socket) {
     console.log(`客户端 ${socket.id} 连接`);
-    spawn(socket);
+    spawn(socket, this.conn);
   }
 }

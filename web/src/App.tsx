@@ -3,9 +3,9 @@ import "./App.css";
 import { io, Socket } from "socket.io-client";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
+import { Button, Form, Input, Select } from "@arco-design/web-react";
 
 function App() {
-  const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<string[]>([]);
 
   const socketRef = useRef<Socket>(null);
@@ -15,9 +15,10 @@ function App() {
   useEffect(() => {
     const socket = (socketRef.current = io("http://localhost:3000"));
 
-    socket.on("message", (message) => {
+    socket.on("sftp", (message) => {
       setMessages((prev) => [...prev, message]);
     });
+
     socket.on("output", (data) => {
       xtermRef.current?.write(data);
     });
@@ -62,23 +63,45 @@ function App() {
     };
   }, []);
 
-  const send = () => {
+  const send = ({ type, data }: { type: string; data: string }) => {
     const socket = socketRef.current;
     if (!socket) return;
-    socket.emit("message", message, (ack: any) => {
+    socket.emit(type, data, (ack: any) => {
       console.log(ack);
     });
-    setMessage("");
   };
 
   return (
     <>
       <div className="terminal-container" ref={containerRef}></div>
 
-      <div>
-        <input value={message} onChange={(e) => setMessage(e.target.value)} />
-        <button onClick={send}>Send</button>
-      </div>
+      <Form
+        layout="inline"
+        onSubmit={(value) => {
+          send(value);
+        }}
+      >
+        <Form.Item label="消息类型" field={"type"}>
+          <Select
+            style={{ width: 200 }}
+            options={[
+              {
+                label: "sftp-list",
+                value: "sftp-list",
+              },
+              {
+                label: "sftp-read",
+                value: "sftp-read",
+              },
+            ]}
+          ></Select>
+        </Form.Item>
+        <Form.Item label="消息内容" field={"data"}>
+          <Input />
+        </Form.Item>
+
+        <Button htmlType="submit">发送</Button>
+      </Form>
 
       <div>
         {messages.map((msg, idx) => (

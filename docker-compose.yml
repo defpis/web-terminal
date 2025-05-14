@@ -1,0 +1,19 @@
+---
+services:
+  openssh-server:
+    image: lscr.io/linuxserver/openssh-server:latest
+    container_name: openssh-server
+    hostname: openssh-server
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      - PASSWORD_ACCESS=true
+      - USER_NAME=test
+      - USER_PASSWORD=test
+    volumes:
+      - ./.docker/config:/config
+      - ./.docker/data:/data
+    ports:
+      - 2222:2222
+    restart: unless-stopped
